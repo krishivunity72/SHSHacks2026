@@ -1,0 +1,14 @@
+{
+  "parts": [
+    { "id": "battery1", "type": "battery", "voltage": 9 },
+    { "id": "resistor1", "type": "resistor", "resistance": 330 },
+    { "id": "led1", "type": "led", "color": "green" },
+    { "id": "switch1", "type": "switch", "isOn": true }
+  ],
+  "wires": [
+    { "fromPart": "battery1", "fromPin": "plus", "toPart": "resistor1", "toPin": "a" },
+    { "fromPart": "resistor1", "fromPin": "b", "toPart": "led1", "toPin": "plus" },
+    { "fromPart": "led1", "fromPin": "minus", "toPart": "switch1", "toPin": "a" },
+    { "fromPart": "switch1", "fromPin": "b", "toPart": "battery1", "toPin": "minus" }
+  ]
+}
