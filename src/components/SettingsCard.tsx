@@ -90,6 +90,85 @@ export default function SettingsCard({ part, wire, reading, onChangePart, onChan
         </button>
       )}
 
+      {part.type === 'arduino' && (
+        <div style={{ marginTop: '12px' }}>
+          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '13px' }}>
+            Spawn Pins on Board:
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '12px' }}>
+            {PART_INFO.arduino.pins.map((pin) => {
+              const active = part.activePins ?? ['5v', 'gnd', 'd13'];
+              const isSpawned = active.includes(pin.name);
+              return (
+                <button
+                  key={pin.name}
+                  className="btn small"
+                  style={{
+                    padding: '3px 7px',
+                    fontSize: '11px',
+                    fontWeight: isSpawned ? 'bold' : 'normal',
+                    backgroundColor: isSpawned ? '#00878F' : '#ECEFF1',
+                    color: isSpawned ? '#FFFFFF' : '#37474F',
+                    borderColor: isSpawned ? '#005C62' : '#CFD8DC',
+                  }}
+                  onClick={() => {
+                    const nextActive = isSpawned
+                      ? active.filter((p) => p !== pin.name)
+                      : [...active, pin.name];
+                    onChangePart({ activePins: nextActive });
+                  }}
+                >
+                  {pin.name.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+
+          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '13px' }}>
+            Arduino C++ Code:
+          </label>
+          <textarea
+            rows={8}
+            value={part.code ?? ''}
+            onChange={(e) => onChangePart({ code: e.target.value })}
+            placeholder="void setup() { ... }"
+            style={{
+              width: '100%',
+              fontFamily: 'monospace',
+              fontSize: '11px',
+              backgroundColor: '#1E1E1E',
+              color: '#00E676',
+              border: '1px solid #37474F',
+              borderRadius: '6px',
+              padding: '8px',
+              resize: 'vertical',
+            }}
+          />
+          <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {['d13', 'd12', 'd11', 'd10', 'd9', 'd8', 'd7', 'd6', 'd5', 'd4', 'd3', 'd2', 'd1', 'd0'].map((dPin) => {
+              const active = part.activePins ?? ['5v', 'gnd', 'd13'];
+              if (!active.includes(dPin)) return null;
+              const val = (part.pinOutputs?.[dPin] ?? (dPin === 'd13' ? 5 : 0)) > 0 ? 5 : 0;
+              return (
+                <button
+                  key={dPin}
+                  className="btn small"
+                  style={{ fontSize: '11px', padding: '3px 6px' }}
+                  onClick={() => {
+                    const nextVal = val > 0 ? 0 : 5;
+                    onChangePart({
+                      pinOutputs: { ...(part.pinOutputs ?? {}), [dPin]: nextVal },
+                    });
+                  }}
+                >
+                  {dPin.toUpperCase()}: {val > 0 ? 'HIGH (5V)' : 'LOW (0V)'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {reading && (
         <div className="readings">
           <p>

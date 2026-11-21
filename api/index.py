@@ -22,7 +22,6 @@ def convert(img: bytes, mime_type: str = "image/png"):
     prompt = """
     You are an expert electrical engineer and CAD schematic designer.
     Analyze this hand-drawn circuit schematic and convert it into a clean, ready-to-render graph layout for a frontend canvas/flowchart diagram.
-
     Return ONLY a raw JSON object with a 'nodes' array and an 'edges' array matching this structure:
     {
       "nodes": [

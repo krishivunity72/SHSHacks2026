@@ -39,7 +39,16 @@ export function runSimulation(parts: Part[], wires: Wire[]): SimulationResult {
   const { nodeOf, nodeCount } = groupPinsIntoNodes(parts, wires);
 
   const firstBattery = parts.find((p) => p.type === 'battery');
-  const ground = firstBattery ? nodeOf(firstBattery.id, 'minus') : 0;
+  const firstArduino = parts.find((p) => p.type === 'arduino');
+  const ground = firstBattery
+    ? nodeOf(firstBattery.id, 'minus')
+    : firstArduino
+    ? (firstArduino.activePins?.includes('gnd1')
+        ? nodeOf(firstArduino.id, 'gnd1')
+        : firstArduino.activePins?.includes('gnd2')
+        ? nodeOf(firstArduino.id, 'gnd2')
+        : nodeOf(firstArduino.id, 'gnd'))
+    : 0;
 
   const ledIsOn: Record<string, boolean> = {};
   for (const part of parts) {
@@ -50,7 +59,7 @@ export function runSimulation(parts: Part[], wires: Wire[]): SimulationResult {
   let voltages: number[] = [];
 
   for (let attempt = 0; attempt < 40; attempt++) {
-    elements = parts.map((part) => makeElement(part, nodeOf, ledIsOn[part.id]));
+    elements = parts.flatMap((part) => makeElements(part, nodeOf, ledIsOn[part.id]));
     voltages = solveForVoltages(elements, nodeCount, ground);
 
     let guessChanged = false;
@@ -89,15 +98,23 @@ export function runSimulation(parts: Part[], wires: Wire[]): SimulationResult {
       if (current > LED_MAX_CURRENT) {
         warning = `${(current * 1000).toFixed(0)} mA through the LED. It would burn out, so add a resistor.`;
       }
-    } else if (part.type === 'switch' && !part.isOn) {
+    } else if ((part.type === 'switch' || part.type === 'button') && !part.isOn) {
       current = 0;
     }
 
     current = part.type === 'battery' ? current : Math.abs(current);
     const power = Math.abs(voltage * current);
-
+    if (part.type === 'bulb') {
+      brightness = Math.min(1, power/BULB_FULL_POWER);
+    }
+    if (part.type === 'buzzer'){
+      brightness = Math.min(1, Math.abs(voltage / 3.0));
+    }
     if (part.type === 'bulb') {
       brightness = Math.min(1, power / BULB_FULL_POWER);
+    }
+    if (part.type === 'buzzer') {
+      brightness = Math.min(1, Math.abs(voltage) / 3.0);
     }
     if (part.type === 'resistor' && power > RESISTOR_MAX_POWER) {
       warning = `The resistor is using ${power.toFixed(2)} W (max is ${RESISTOR_MAX_POWER} W) and would overheat.`;
@@ -150,14 +167,65 @@ function groupPinsIntoNodes(parts: Part[], wires: Wire[]) {
 
 function pinsOf(part: Part) {
   if (part.type === 'battery' || part.type === 'led') return ['plus', 'minus'];
+  if (part.type === 'buzzer') return ['a', 'b'];
+  if (part.type === 'arduino') {
+    return part.activePins ?? ['5v', 'gnd', 'd13'];
+  }
   return ['a', 'b'];
 }
 
-function makeElement(
+function makeElements(
   part: Part,
   nodeOf: (partId: string, pin: string) => number,
   ledOn: boolean | undefined,
-): Element {
+): Element[] {
+  if (part.type === 'arduino') {
+    const active = part.activePins ?? ['5v', 'gnd', 'd13'];
+    const gndNode = active.includes('gnd1')
+      ? nodeOf(part.id, 'gnd1')
+      : active.includes('gnd2')
+      ? nodeOf(part.id, 'gnd2')
+      : nodeOf(part.id, 'gnd');
+
+    const elements: Element[] = [];
+
+    if (active.includes('5v')) {
+      elements.push({
+        part,
+        nodeA: nodeOf(part.id, '5v'),
+        nodeB: gndNode,
+        conductance: 1 / BATTERY_RESISTANCE,
+        push: 5.0,
+      });
+    }
+
+    if (active.includes('3v3')) {
+      elements.push({
+        part,
+        nodeA: nodeOf(part.id, '3v3'),
+        nodeB: gndNode,
+        conductance: 1 / BATTERY_RESISTANCE,
+        push: 3.3,
+      });
+    }
+
+    for (let i = 0; i <= 13; i++) {
+      const pinKey = `d${i}`;
+      if (active.includes(pinKey)) {
+        const volts = part.pinOutputs?.[pinKey] ?? (pinKey === 'd13' ? 5 : 0);
+        elements.push({
+          part,
+          nodeA: nodeOf(part.id, pinKey),
+          nodeB: gndNode,
+          conductance: 1 / 25, 
+          push: volts,
+        });
+      }
+    }
+
+    return elements;
+  }
+
   const [pinA, pinB] = pinsOf(part);
   const element: Element = {
     part,
@@ -174,14 +242,16 @@ function makeElement(
     element.conductance = 1 / Math.max(part.resistance ?? 330, 0.001);
   } else if (part.type === 'bulb') {
     element.conductance = 1 / BULB_RESISTANCE;
-  } else if (part.type === 'switch' && part.isOn) {
+  } else if ((part.type === 'switch' || part.type === 'button') && part.isOn) {
     element.conductance = 100;
   } else if (part.type === 'led' && ledOn) {
     element.conductance = 1 / LED_ON_RESISTANCE;
     element.push = LED_COLORS[part.color ?? 'red'].forwardVoltage;
+  } else if (part.type === 'buzzer') {
+    element.conductance = 1 / 100;
   }
 
-  return element;
+  return [element];
 }
 
 function solveForVoltages(elements: Element[], nodeCount: number, ground: number) {
@@ -230,7 +300,7 @@ function solveForVoltages(elements: Element[], nodeCount: number, ground: number
 
 function gaussianElimination(A: number[][], b: number[]) {
   const n = b.length;
-  const m = A.map((rowValues, i) => [...rowValues, b[i]]); // augmented matrix
+  const m = A.map((rowValues, i) => [...rowValues, b[i]]); 
 
   for (let col = 0; col < n; col++) {
     let best = col;

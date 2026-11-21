@@ -62,7 +62,6 @@ export default function Workplane(props: Props) {
     return () => svg.removeEventListener('wheel', handleWheel);
   }, []);
 
-
   function handleBackgroundDown(e: React.PointerEvent<SVGSVGElement>) {
     props.onSelectPart(null);
     props.onSelectWire(null);
@@ -145,7 +144,7 @@ export default function Workplane(props: Props) {
       <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>
         <rect x={-5000} y={-5000} width={10000} height={10000} fill="url(#grid)" pointerEvents="none" />
 
-        {/* Parts */}
+        {}
         {parts.map((part) => {
           const info = PART_INFO[part.type];
           const reading = readings?.[part.id];
@@ -179,6 +178,7 @@ export default function Workplane(props: Props) {
           const start = getPinPosition(fromPart, wire.fromPin);
           const end = getPinPosition(toPart, wire.toPin);
           const isSelected = wire.id === props.selectedWireId;
+
           return (
             <g
               key={wire.id}
@@ -188,10 +188,11 @@ export default function Workplane(props: Props) {
                 props.onSelectWire(wire.id);
               }}
             >
-
               <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="transparent" strokeWidth={12} />
-              {isSelected && <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="#90caf9" strokeWidth={8} strokeLinecap="round" />}
-              <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke={wire.color} strokeWidth={4} strokeLinecap="round" />
+              {isSelected && (
+                <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="#90caf9" strokeWidth={7} strokeLinecap="round" />
+              )}
+              <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke={wire.color} strokeWidth={3.5} strokeLinecap="round" />
             </g>
           );
         })}
@@ -209,8 +210,14 @@ export default function Workplane(props: Props) {
           />
         )}
 
-        {parts.map((part) =>
-          PART_INFO[part.type].pins.map((pin) => {
+        {parts.map((part) => {
+          const allPins = PART_INFO[part.type].pins;
+          const pinsToRender =
+            part.type === 'arduino' && part.activePins
+              ? allPins.filter((pin) => part.activePins!.includes(pin.name))
+              : allPins;
+
+          return pinsToRender.map((pin) => {
             const pos = getPinPosition(part, pin.name);
             const isHovered = hoveredPin?.partId === part.id && hoveredPin.pin === pin.name;
             const isWireStart = wireStart?.partId === part.id && wireStart.pin === pin.name;
@@ -236,8 +243,8 @@ export default function Workplane(props: Props) {
                 )}
               </g>
             );
-          }),
-        )}
+          });
+        })}
       </g>
 
       {parts.length === 0 && (

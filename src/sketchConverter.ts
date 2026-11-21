@@ -31,8 +31,11 @@ const TYPE_WORDS: Record<PartType, string[]> = {
   battery: ['battery', 'cell', 'vcc', 'voltage', 'source', 'power'],
   resistor: ['resistor', 'resistance'],
   led: ['led', 'diode', 'light emitting'],
-  switch: ['switch', 'button', 'push'],
+  switch: ['switch', 'toggle'],
+  button: ['button', 'push', 'pushbutton', 'momentary'],
   bulb: ['bulb', 'lamp', 'light'],
+  buzzer: ['buzzer', 'piezo', 'speaker', 'audio', 'sound'],
+  arduino: ['arduino', 'uno', 'microcontroller', 'mcu', 'esp32'],
 };
 
 const NET_WORDS = ['ground', 'gnd', 'junction', 'node', 'connection', 'wire', 'net', 'dot'];
@@ -104,6 +107,16 @@ function matchPin(type: PartType, aiPin: string | undefined, nodePins: string[] 
   if (!aiPin) return null;
   const pin = clean(aiPin);
 
+  if (type === 'arduino') {
+    const known = PART_INFO.arduino.pins.find((p) => clean(p.name) === pin || clean(p.label).includes(pin));
+    if (known) return known.name;
+    if (pin.includes('gnd') || pin.includes('ground')) return 'gnd';
+    if (pin.includes('5v') || pin.includes('vcc') || pin.includes('power')) return '5v';
+    if (pin.includes('vin')) return 'vin';
+    const num = pin.replace(/\D/g, '');
+    if (num) return `d${num}`;
+  }
+
   if (FIRST_PIN_WORDS.includes(pin)) return ourPinName(type, 1);
   if (SECOND_PIN_WORDS.includes(pin)) return ourPinName(type, 2);
 
@@ -139,14 +152,27 @@ export function convertSketch(data: unknown): ConvertedSketch {
     const centerX = typeof node.x === 'number' ? node.x : 150 + (i % 4) * 180;
     const centerY = typeof node.y === 'number' ? node.y : 150 + Math.floor(i / 4) * 180;
 
-    parts.push({
+    const createdPart: Part = {
       id,
       type,
       x: snapToGrid(centerX - info.width / 2),
       y: snapToGrid(centerY - info.height / 2),
       rotation: 0,
       ...readSettings(type, node),
-    });
+    };
+
+    if (type === 'arduino') {
+      const pinsUsedForArduino = edges
+        .flatMap((e) => [
+          e.from === id ? matchPin('arduino', e.fromPin) : null,
+          e.to === id ? matchPin('arduino', e.toPin) : null,
+        ])
+        .filter((p): p is string => Boolean(p));
+
+      createdPart.activePins = Array.from(new Set(['gnd', ...pinsUsedForArduino]));
+    }
+
+    parts.push(createdPart);
   });
 
   const pinsUsed: Record<string, number> = {};

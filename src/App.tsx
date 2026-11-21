@@ -22,6 +22,109 @@ export default function App() {
   const photoInput = useRef<HTMLInputElement>(null);
   const simulation = useMemo(() => (isSimulating ? runSimulation(parts, wires) : null), [isSimulating, parts, wires]);
 
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const oscillatorRef = useRef<OscillatorNode | null>(null);
+
+  useEffect(() => {
+    if (!isSimulating || !simulation) {
+      if (oscillatorRef.current) {
+        try {
+          oscillatorRef.current.stop();
+          oscillatorRef.current.disconnect();
+        } catch {}
+        oscillatorRef.current = null;
+      }
+      return;
+    }
+
+    const buzzerPart = parts.find((p) => p.type === 'buzzer');
+    const reading = buzzerPart ? simulation.readings[buzzerPart.id] : null;
+    const isBuzzing = reading && (reading.brightness > 0.005 || Math.abs(reading.voltage) > 0.1 || Math.abs(reading.current) > 0.0005);
+
+    if (isBuzzing) {
+      if (!audioCtxRef.current) {
+        const AudioClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtxRef.current = new AudioClass();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      if (!oscillatorRef.current) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        oscillatorRef.current = osc;
+      }
+    } else {
+      if (oscillatorRef.current) {
+        try {
+          oscillatorRef.current.stop();
+          oscillatorRef.current.disconnect();
+        } catch {}
+        oscillatorRef.current = null;
+      }
+    }
+  }, [isSimulating, simulation, parts]);
+
+  useEffect(() => {
+    if (!isSimulating) return;
+
+    const arduino = parts.find((p) => p.type === 'arduino');
+    if (!arduino || !arduino.code) return;
+
+    const code = arduino.code;
+    const actions: { pin: string; high: boolean; delay: number }[] = [];
+
+    const regex = /digitalWrite\s*\(\s*(\d+|[a-zA-Z0-9_]+)\s*,\s*(HIGH|LOW|1|0)\s*\)[\s\S]*?(?:delay\s*\(\s*(\d+)\s*\))?/gi;
+    let match;
+    while ((match = regex.exec(code)) !== null) {
+      const rawPin = match[1].toLowerCase().replace(/^d/, '');
+      const isHigh = match[2].toUpperCase() === 'HIGH' || match[2] === '1';
+      const delayMs = match[3] ? parseInt(match[3], 10) : 500;
+      actions.push({
+        pin: `d${rawPin}`,
+        high: isHigh,
+        delay: Math.max(delayMs, 100), 
+      });
+    }
+
+    if (actions.length === 0) return;
+
+    let stepIndex = 0;
+    let timer: number | null = null;
+
+    function runStep() {
+      const step = actions[stepIndex];
+      setParts((prevParts) =>
+        prevParts.map((p) => {
+          if (p.id !== arduino!.id) return p;
+          return {
+            ...p,
+            pinOutputs: {
+              ...(p.pinOutputs ?? {}),
+              [step.pin]: step.high ? 5 : 0,
+            },
+          };
+        }),
+      );
+
+      stepIndex = (stepIndex + 1) % actions.length;
+      timer = window.setTimeout(runStep, step.delay);
+    }
+
+    runStep();
+
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [isSimulating, parts.find((p) => p.type === 'arduino')?.code]);
+
   const selectedPart = parts.find((p) => p.id === selectedPartId);
   const selectedWire = wires.find((w) => w.id === selectedWireId);
   function addPart(type: PartType, x: number, y: number) {
@@ -167,7 +270,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <div className="logo">⚡ Circuit Sandbox</div>
+        <div className="logo">Circuit Sandbox</div>
 
         <div className="button-group">
           <button className="btn" onClick={rotateSelected} disabled={!selectedPart}>
@@ -183,7 +286,7 @@ export default function App() {
 
         <div className="button-group">
           <button className="btn" onClick={() => photoInput.current?.click()} disabled={loadingSketch}>
-            {loadingSketch ? 'Reading sketch...' : '📷 Upload Sketch'}
+            {loadingSketch ? 'Reading sketch...' : 'Upload Sketch'}
           </button>
           <button className="btn" onClick={() => jsonInput.current?.click()}>
             Import
